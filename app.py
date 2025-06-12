@@ -8,7 +8,7 @@ import google.generativeai as genai
 from werkzeug.utils import secure_filename
 
 # Configure Gemini API Key
-genai.configure(api_key="AIzaSyBApw2jX7hFguqrUxNA0et8HxH2qdzw0uw")
+genai.configure(api_key="your gemini api key")
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = "uploads"
