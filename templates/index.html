@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI ChatBot</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/highlight.min.js"></script>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/styles/atom-one-dark.min.css">
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>🗂️ Chats</h2>
+        <ul id="chat-list">
+          {% for chat in chats %}
+          <li>
+            <div class="chat-item">
+              <a href="/?chat_id={{ chat.id }}">{{ chat.title }}</a>
+              <button class="delete-chat-btn"
+                onclick="deleteChat('{{ chat.id }}', event)"
+                title="Delete chat">
+                🗑️
+              </button>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        <button onclick="newChat()">+ New Chat</button>
+      </aside>
+
+      <div class="container">
+        <header><h1>✨ NEXTGENIFY AI ChatBot</h1></header>
+        <div id="chat-box" class="chat-box">
+          {% for msg in messages %}
+          <div class="{{ 'user-msg' if msg.role == 'user' else 'bot-msg' }}">
+            <strong>{{ msg.role.capitalize() }}:</strong>
+            <div class="markdown">{{ msg.content }}</div>
+          </div>
+
+          {% endfor %}
+        </div>
+
+        <div class="input-area">
+          <div class="input-container">
+            <input type="text" id="user-input"
+              placeholder="Type your message..."
+              onkeydown="if(event.key==='Enter') sendMessage()">
+            <button class="send-button" onclick="sendMessage()">Send</button>
+          </div>
+
+          <hr
+            style="border: none; height: 1px; background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.2), transparent); margin: 15px 0;">
+
+          <!-- PDF Upload Area -->
+          <div class="pdf-upload">
+            <h3>📄 Upload PDF</h3>
+            <div class="pdf-controls">
+              <input type="file" id="pdfFile" accept=".pdf">
+              <button onclick="uploadPDF()">Upload & Summarize</button>
+              <button class="clean-btn" onclick="cleanSummary()">Clean</button>
+            </div>
+          </div>
+
+          <!-- PDF Reply Display -->
+          <div id="pdfReply" class="pdf-reply"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    let currentChatId = new URLSearchParams(window.location.search).get("chat_id");
+
+    async function sendMessage() {
+      const input = document.getElementById("user-input");
+      const chatBox = document.getElementById("chat-box");
+      const message = input.value.trim();
+      if (!message) return;
+
+      chatBox.innerHTML += `<div class='user-msg'><strong>You:</strong> <div class="markdown">${message}</div></div>`;
+      input.value = "";
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, chat_id: currentChatId })
+      });
+
+      const data = await res.json();
+      const reply = marked.parse(data.reply);
+      currentChatId = data.chat_id;
+
+      chatBox.innerHTML += `<div class='bot-msg'><strong>AI:</strong> <div class="markdown">${reply}</div></div>`;
+      document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function newChat() {
+      window.location.href = "/";
+    }
+
+    async function deleteChat(chatId, event) {
+      // Prevent the link from being clicked when delete button is pressed
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // Show confirmation dialog
+      if (!confirm("Are you sure you want to delete this chat? This action cannot be undone.")) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/delete_chat/${chatId}`, {
+          method: "DELETE"
+        });
+
+        if (res.ok) {
+          // Remove the chat from the list without full page reload
+          const chatItem = event.target.closest('li');
+          chatItem.style.opacity = '0';
+          chatItem.style.transform = 'translateX(-100%)';
+          
+          setTimeout(() => {
+            chatItem.remove();
+          }, 300);
+
+          // If we deleted the current chat, redirect to home
+          if (currentChatId === chatId) {
+            setTimeout(() => {
+              window.location.href = "/";
+            }, 500);
+          }
+        } else {
+          alert("Failed to delete chat. Please try again.");
+        }
+      } catch (error) {
+        console.error('Delete failed:', error);
+        alert("Failed to delete chat. Please try again.");
+      }
+    }
+
+    async function uploadPDF() {
+      const fileInput = document.getElementById("pdfFile");
+      const file = fileInput.files[0];
+
+      if (!file || !file.name.endsWith(".pdf")) {
+        alert("Please select a PDF file.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch("/upload", {
+          method: "POST",
+          body: formData
+        });
+
+        const data = await res.json();
+        const reply = marked.parse(data.reply);
+
+        document.getElementById("pdfReply").innerHTML = `<h4>📄 Summary from PDF:</h4><div class="markdown">${reply}</div>`;
+        document.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+      } catch (error) {
+        console.error('Upload failed:', error);
+        document.getElementById("pdfReply").innerHTML = `<p style='color: #e53e3e;'>Upload failed. Please try again.</p>`;
+      }
+    }
+
+    function cleanSummary() {
+      // Clear the PDF summary section
+      document.getElementById("pdfReply").innerHTML = "";
+      
+      // Clear the file input
+      document.getElementById("pdfFile").value = "";
+      
+      // Show confirmation message with animation
+      const pdfReplyDiv = document.getElementById("pdfReply");
+      pdfReplyDiv.innerHTML = "<p style='color: #38a169; font-style: italic; text-align: center; padding: 15px; background: linear-gradient(135deg, #f0fff4 0%, #c6f6d5 100%); border-radius: 12px; border: 1px solid #38a169;'>Summary cleared successfully ✓</p>";
+      
+      // Remove the confirmation message after 3 seconds with fade effect
+      setTimeout(() => {
+        const confirmMsg = pdfReplyDiv.firstElementChild;
+        if (confirmMsg) {
+          confirmMsg.style.opacity = '0';
+          confirmMsg.style.transform = 'translateY(-10px)';
+          setTimeout(() => {
+            pdfReplyDiv.innerHTML = "";
+          }, 300);
+        }
+      }, 2500);
+    }
+
+    window.onload = () => {
+      // Step 1: Parse markdown content inside .markdown blocks
+      document.querySelectorAll('.markdown').forEach((block) => {
+        const raw = block.textContent; // get raw markdown
+        block.innerHTML = marked.parse(raw); // parse to HTML
+      });
+    
+      // Step 2: Highlight code and add copy buttons
+      document.querySelectorAll('.markdown pre code').forEach((el) => {
+        hljs.highlightElement(el);
+    
+        // Create copy button
+        const button = document.createElement('button');
+        button.className = 'copy-button';
+        button.textContent = 'Copy';
+    
+        // Copy logic
+        button.onclick = () => {
+          navigator.clipboard.writeText(el.innerText);
+          button.textContent = 'Copied!';
+          setTimeout(() => (button.textContent = 'Copy'), 2000);
+        };
+    
+        // Add button to code block
+        el.parentElement.style.position = 'relative';
+        el.parentElement.appendChild(button);
+      });
+    };
+    
+    
+  </script>
+  </body>
+</html>
